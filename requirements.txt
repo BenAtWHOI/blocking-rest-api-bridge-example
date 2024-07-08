@@ -1,0 +1,4 @@
+django
+django-ninja
+pika
+aio_pika
