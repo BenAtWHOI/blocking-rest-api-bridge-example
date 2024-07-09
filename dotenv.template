@@ -1,0 +1,6 @@
+AMQP_USERNAME=guest
+AMQP_PASSWORD=guest
+AMQP_HOST=rabbitmq
+AMQP_INPUT_CHANNEL=api_input
+AMQP_OUTPUT_CHANNEL=api_output
+BASE_URL=http://localhost:8000

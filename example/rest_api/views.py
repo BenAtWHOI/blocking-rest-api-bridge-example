@@ -1,22 +1,17 @@
 import aio_pika
 import asyncio
 import json
+import os
 import pika
 import uuid
 from ninja import NinjaAPI
 from .models import RequestPayload, ResponsePayload, ResponseHolder
+from dotenv import load_dotenv
 
 ###############################################################################
-DOTENV = {
-    'AMQP_USERNAME': 'guest',
-    'AMQP_PASSWORD': 'guest',
-    'AMQP_HOST': 'rabbitmq',
-    'AMQP_INPUT_CHANNEL': 'api_input',
-    'AMQP_OUTPUT_CHANNEL': 'api_output',
-}
 api = NinjaAPI()
+load_dotenv()
 
-###############################################################################
 @api.get("/hello")
 def hello(request):
     return {"message": "Hello, world!"}
@@ -24,15 +19,15 @@ def hello(request):
 ###############################################################################
 @api.post("/blocking")
 def blocking(request, payload: RequestPayload):
-    credentials = pika.PlainCredentials(DOTENV['AMQP_USERNAME'], DOTENV['AMQP_PASSWORD'])
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=DOTENV['AMQP_HOST'], credentials=credentials))
+    credentials = pika.PlainCredentials(os.getenv('AMQP_USERNAME'), os.getenv('AMQP_PASSWORD'))
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host=os.getenv('AMQP_HOST'), credentials=credentials))
     channel = connection.channel()
 
     # Publish message to AMQP input
-    channel.queue_declare(DOTENV['AMQP_INPUT_CHANNEL'])
+    channel.queue_declare(os.getenv('AMQP_INPUT_CHANNEL'))
     token = str(uuid.uuid4())
     body = json.dumps({"token": token, "payload": payload.dict()})
-    channel.basic_publish(exchange='', routing_key=DOTENV['AMQP_INPUT_CHANNEL'], body=body)
+    channel.basic_publish(exchange='', routing_key=os.getenv('AMQP_INPUT_CHANNEL'), body=body)
 
     # Store response in memory
     response_holder = ResponseHolder()
@@ -45,8 +40,8 @@ def blocking(request, payload: RequestPayload):
             # Stop consuming after correct response
             ch.stop_consuming()
 
-    channel.queue_declare(DOTENV['AMQP_OUTPUT_CHANNEL'])
-    channel.basic_consume(queue=DOTENV['AMQP_OUTPUT_CHANNEL'], on_message_callback=callback, auto_ack=True)
+    channel.queue_declare(os.getenv('AMQP_OUTPUT_CHANNEL'))
+    channel.basic_consume(queue=os.getenv('AMQP_OUTPUT_CHANNEL'), on_message_callback=callback, auto_ack=True)
     channel.start_consuming()
 
     # Wait for response
@@ -68,14 +63,14 @@ async def non_blocking(request, payload: RequestPayload):
         background_task_running = True
         asyncio.create_task(listen_for_responses())
 
-    amqp_url = f"amqp://{DOTENV['AMQP_USERNAME']}:{DOTENV['AMQP_PASSWORD']}@{DOTENV['AMQP_HOST']}/"
+    amqp_url = f"amqp://{os.getenv('AMQP_USERNAME')}:{os.getenv('AMQP_PASSWORD')}@{os.getenv('AMQP_HOST')}/"
     connection = await aio_pika.connect_robust(amqp_url)
     channel = await connection.channel()
-    await channel.declare_queue(DOTENV['AMQP_INPUT_CHANNEL'])
+    await channel.declare_queue(os.getenv('AMQP_INPUT_CHANNEL'))
     token = str(uuid.uuid4())
     pending_requests[token] = {"status": "processing"}
     message = aio_pika.Message(body=json.dumps({"token": token, "payload": payload.dict()}).encode())
-    await channel.default_exchange.publish(message, routing_key=DOTENV['AMQP_INPUT_CHANNEL'])
+    await channel.default_exchange.publish(message, routing_key=os.getenv('AMQP_INPUT_CHANNEL'))
     await connection.close()
     return {"token": token, "status": "processing"}
 
@@ -84,12 +79,12 @@ def check_status(request, token: str):
     return pending_requests.get(token, {"status": "not found"})
 
 async def listen_for_responses():
-    amqp_url = f"amqp://{DOTENV['AMQP_USERNAME']}:{DOTENV['AMQP_PASSWORD']}@{DOTENV['AMQP_HOST']}/"
+    amqp_url = f"amqp://{os.getenv('AMQP_USERNAME')}:{os.getenv('AMQP_PASSWORD')}@{os.getenv('AMQP_HOST')}/"
     while True:
         try:
             connection = await aio_pika.connect_robust(amqp_url)
             channel = await connection.channel()
-            queue = await channel.declare_queue(DOTENV['AMQP_OUTPUT_CHANNEL'])
+            queue = await channel.declare_queue(os.getenv('AMQP_OUTPUT_CHANNEL'))
 
             async with queue.iterator() as queue_iter:
                 async for message in queue_iter:
