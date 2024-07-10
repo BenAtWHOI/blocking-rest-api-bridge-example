@@ -11,8 +11,8 @@ load_dotenv()
 def process_message(ch, method, properties, body):
     message = json.loads(body)
     token = message['token']
-    baz = message['payload'].get('baz')
-    message = f"successfully foo'd the baz ({baz})"
+    baz = message['payload']['baz']
+    message = f"successfully foo'd the baz ({baz})" # or some other process with the data
     response = {
         'token': token,
         'payload': {
@@ -20,11 +20,9 @@ def process_message(ch, method, properties, body):
         }
     }
 
-    ch.basic_publish(exchange='', routing_key=os.getenv('AMQP_OUTPUT_CHANNEL'), body=json.dumps(response))
-
     # Simulate long running task
     time.sleep(random.randint(2, 5))
-    print(f'[!] Task successfully processed.')
+    ch.basic_publish(exchange='', routing_key=os.getenv('AMQP_OUTPUT_CHANNEL'), body=json.dumps(response))
 
 ###############################################################################
 def run_processor():
@@ -35,7 +33,6 @@ def run_processor():
     channel.queue_declare(queue=os.getenv('AMQP_INPUT_CHANNEL'))
     channel.queue_declare(queue=os.getenv('AMQP_OUTPUT_CHANNEL'))
     channel.basic_consume(queue=os.getenv('AMQP_INPUT_CHANNEL'), on_message_callback=process_message, auto_ack=True)
-    print('Processor is waiting for messages')
     channel.start_consuming()
 
 ###############################################################################

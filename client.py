@@ -1,72 +1,73 @@
-import asyncio
-import aiohttp
 import json
 import os
 import requests
+import time
 from dotenv import load_dotenv
 
+###############################################################################
 load_dotenv()
 
-###############################################################################
 def pretty(response):
     return json.dumps(response.json(), indent=2)
-
-async def fetch(session, url, method='GET', json=None, timeout=10):
-    try:
-        if method == 'GET':
-            async with session.get(url, timeout=timeout) as response:
-                return await response.json()
-        elif method == 'POST':
-            async with session.post(url, json=json, timeout=timeout) as response:
-                return await response.json()
-    except asyncio.TimeoutError:
-        print(f"Request to {url} timed out after {timeout} seconds")
-        return None
-    except aiohttp.ClientError as e:
-        print(f"Error making request to {url}: {e}")
-        return None
 
 ###############################################################################
 def test_blocking_endpoint():
     print('======================================')
     print('Testing blocking endpoint\n')
+
     # Make blocking endpoint call
     url = f'{os.getenv("BASE_URL")}/api/blocking'
-    response = requests.post(url, json={'foo': 'bar', 'baz': 44})
-    print(pretty(response))
-    # 2. Publish another message that completes before the first
-    response = requests.post(url, json={'foo': 'bar', 'baz': 12345})
-    print(pretty(response))
-    # 3. Observe output - payload of the first endpoint call was returned, but not the second
+    json = {'foo': 'bar', 'baz': 44}
+    start = time.perf_counter()
+    response = requests.post(url, json=json)
+    finish = time.perf_counter() - start
+    print(f'Got response ({finish:0.2f}s): {pretty(response)}')
+
+    # Make a second endpoint call
+    json = {'foo': 'foobar', 'baz': 12345}
+    start = time.perf_counter()
+    response = requests.post(url, json=json)
+    finish = time.perf_counter() - start
+    print(f'Got response ({finish:0.2f}s): {pretty(response)}')
+
+    # Observe output: 
+    #  - payloads are returned to the client when the task completes
+    #  - endpoint is blocking, taks execute synchronously
 
 ###############################################################################
-async def test_non_blocking_endpoint():
+def test_non_blocking_endpoint():
     print('======================================')
     print('Testing non-blocking endpoint\n')
-    # Make non-blocking endpoint call
+    
+    # Make non blocking endpoint call
     url = f'{os.getenv("BASE_URL")}/api/non_blocking'
-    async with aiohttp.ClientSession() as session:
-        response = await fetch(session, url, method='POST', json={'foo': 'bar', 'baz': 999})
-        print('Initial response:', json.dumps(response, indent=2))
-        token = response['token']
+    data = {'foo': 'foooooo', 'baz': 7777777}
+    response = requests.post(url, json=data)
+    token = response.json()['token']
+    print(f'Initial response: {pretty(response)}')
 
-        # Poll for status every second
-        while True:
-            status_url = f'{os.getenv("BASE_URL")}/api/status/{token}'
-            status = await fetch(session, status_url)
-            print('Status: ', json.dumps(status, indent=2))
-            if status['status'] == 'completed':
-                break
-            await asyncio.sleep(1)  
-        print(f'Final result: {json.dumps(status, indent=2)}\n')
+    # Interrogate status of call until completed
+    url = f'{os.getenv("BASE_URL")}/api/status?token={token}'
+    response = requests.get(url)
+    status = response.json()['status']
+    while status != 'complete':
+        time.sleep(1)
+        response = requests.get(url)
+        print(f'Polling status: {pretty(response)}')
+        status = response.json()['status']
+
+    # Observe output: 
+    #  - task immediately returns a 'status: processing' message with the token
+    #  - subsequent interrogations of the task reveal the status
+    #  - when the task is completed, the interrogation returns the completed status along with the payload  
 
 ###############################################################################
 def main():
     test_blocking_endpoint()
-    asyncio.run(test_non_blocking_endpoint())
+    test_non_blocking_endpoint()
 
     print('======================================')
-    print('All tests passed.')
+    print('Tests completed.')
     print('======================================')
 
 if __name__ == '__main__':

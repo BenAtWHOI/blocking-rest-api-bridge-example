@@ -1,11 +1,10 @@
-import aio_pika
-import asyncio
 import json
 import os
 import pika
 import uuid
+from .models import RequestPayload, ResponseHolder
 from ninja import NinjaAPI
-from .models import RequestPayload, ResponsePayload, ResponseHolder
+from threading import Thread
 from dotenv import load_dotenv
 
 ###############################################################################
@@ -32,7 +31,7 @@ def blocking(request, payload: RequestPayload):
     # Store response in memory
     response_holder = ResponseHolder()
 
-    def callback(ch, method, properties, body):
+    def save_response(ch, method, properties, body):
         response = json.loads(body)
         if response.get('token') == token:
             response_holder.response = response
@@ -41,7 +40,7 @@ def blocking(request, payload: RequestPayload):
             ch.stop_consuming()
 
     channel.queue_declare(os.getenv('AMQP_OUTPUT_CHANNEL'))
-    channel.basic_consume(queue=os.getenv('AMQP_OUTPUT_CHANNEL'), on_message_callback=callback, auto_ack=True)
+    channel.basic_consume(queue=os.getenv('AMQP_OUTPUT_CHANNEL'), on_message_callback=save_response, auto_ack=True)
     channel.start_consuming()
 
     # Wait for response
@@ -51,51 +50,59 @@ def blocking(request, payload: RequestPayload):
         return {"error": "Response timeout"}
                 
 ###############################################################################
-pending_requests = {}
-background_task_running = False
+cached_requests = {}
 
 @api.post("/non_blocking")
-async def non_blocking(request, payload: RequestPayload):
-    global background_task_running
-    
-    # Start background task if not already running
-    if not background_task_running:
-        background_task_running = True
-        asyncio.create_task(listen_for_responses())
-
-    amqp_url = f"amqp://{os.getenv('AMQP_USERNAME')}:{os.getenv('AMQP_PASSWORD')}@{os.getenv('AMQP_HOST')}/"
-    connection = await aio_pika.connect_robust(amqp_url)
-    channel = await connection.channel()
-    await channel.declare_queue(os.getenv('AMQP_INPUT_CHANNEL'))
+def non_blocking(request, payload: RequestPayload):
     token = str(uuid.uuid4())
-    pending_requests[token] = {"status": "processing"}
-    message = aio_pika.Message(body=json.dumps({"token": token, "payload": payload.dict()}).encode())
-    await channel.default_exchange.publish(message, routing_key=os.getenv('AMQP_INPUT_CHANNEL'))
-    await connection.close()
+    body = {"token": token, "payload": payload.dict()}
+    cached_requests[token] = {"status": "processing"}
+    
+    # Publish message to AMQP queue
+    credentials = pika.PlainCredentials(os.getenv('AMQP_USERNAME'), os.getenv('AMQP_PASSWORD'))
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host=os.getenv('AMQP_HOST'), credentials=credentials))
+    channel = connection.channel()
+    
+    channel.queue_declare(os.getenv('AMQP_INPUT_CHANNEL'))
+    channel.basic_publish(exchange='', routing_key=os.getenv('AMQP_INPUT_CHANNEL'), body=json.dumps(body))
+    connection.close()
+
+    # Start another thread to monitor task completion
+    thread = Thread(target=watch_task, args=(token,))
+    thread.start()
+    
     return {"token": token, "status": "processing"}
 
-@api.get("/status/{token}")
-def check_status(request, token: str):
-    return pending_requests.get(token, {"status": "not found"})
+def watch_task(token):
+    credentials = pika.PlainCredentials(os.getenv('AMQP_USERNAME'), os.getenv('AMQP_PASSWORD'))
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host=os.getenv('AMQP_HOST'), credentials=credentials))
+    channel = connection.channel()
 
-async def listen_for_responses():
-    amqp_url = f"amqp://{os.getenv('AMQP_USERNAME')}:{os.getenv('AMQP_PASSWORD')}@{os.getenv('AMQP_HOST')}/"
-    while True:
-        try:
-            connection = await aio_pika.connect_robust(amqp_url)
-            channel = await connection.channel()
-            queue = await channel.declare_queue(os.getenv('AMQP_OUTPUT_CHANNEL'))
+    # Mark the cached request as complete
+    def complete_task(ch, method, properties, body):
+        response = json.loads(body)
+        if response['token'] == token:
+            payload = response['payload']
+            cached_requests[token] = {"status": "complete", "payload": payload}
+            # Stop consuming after watched task has completed
+            ch.stop_consuming()
 
-            async with queue.iterator() as queue_iter:
-                async for message in queue_iter:
-                    async with message.process():
-                        response = json.loads(message.body.decode())
-                        token = response['token']
-                        if token in pending_requests:
-                            pending_requests[token] = {"status": "completed", "result": response['payload']}
-        except Exception as e:
-            print(f"Error in listen_for_responses: {e}")
-            await asyncio.sleep(5)
-        finally:
-            if 'connection' in locals() and not connection.is_closed:
-                await connection.close()
+    # Monitor the output channel to update task status when complete
+    channel.queue_declare(os.getenv('AMQP_OUTPUT_CHANNEL'))
+    channel.basic_consume(queue=os.getenv('AMQP_OUTPUT_CHANNEL'), on_message_callback=complete_task, auto_ack=True)
+    channel.start_consuming()
+
+@api.get("/status")
+def status(request):
+    token = request.GET['token']
+    cached_request = cached_requests[token]
+    response = {
+        'token': token,
+        'status': cached_request['status']
+    }
+    # If task is complete, add payload to the response and unset the cached request
+    if response['status'] == 'complete':
+        response['payload'] = cached_request['payload']
+        del cached_requests[token]
+
+    return response
