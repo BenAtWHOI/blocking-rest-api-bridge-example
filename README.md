@@ -1,9 +1,10 @@
 https://gist.github.com/joefutrelle/20bc25f566b39ce10db46322a9483a48
 
-# Invocation
+# Run client
 
-```python
-python client.py
+```shell
+$ docker-compose up -d
+$ python client.py
 ```
 
 # Explanation
