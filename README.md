@@ -10,10 +10,10 @@ $ python client.py
 # Explanation
 
 ### Blocking endpoint:
- - Payloads are returned to the client when the task completes
+ - Payload and token are returned to the client when the task completes
  - Endpoint blocks upon request, tasks are executed synchronously
 
 ### Non-blocking endpoint:
  - Task immediately returns a 'status: processing' message and the token
- - Subsequent interrogations of the task reveal the status
- - When the task is completed, the interrogation returns the completed status along with the payload  
+ - Subsequent interrogations of the task reveal the status and the token
+ - When the task is completed, the interrogation returns the completed status, token, and payload  
