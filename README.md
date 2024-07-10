@@ -3,7 +3,7 @@ https://gist.github.com/joefutrelle/20bc25f566b39ce10db46322a9483a48
 # Run client
 
 ```shell
-$ docker-compose up -d
+$ docker-compose build && docker-compose up
 $ python client.py
 ```
 
