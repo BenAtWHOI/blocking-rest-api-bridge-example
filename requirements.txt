@@ -1,3 +1,5 @@
+aio_pika
+aiohttp
 django
 django-ninja
 pika

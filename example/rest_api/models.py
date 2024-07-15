@@ -1,5 +1,6 @@
 from ninja import Schema
 from threading import Event
+from django.db import models
 
 # Create your models here.
 
