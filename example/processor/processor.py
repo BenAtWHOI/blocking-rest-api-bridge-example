@@ -20,32 +20,49 @@ async def run_processor_async():
         # Process message and send to output channel
         async def process_message_async(message: aio_pika.IncomingMessage):
             async with message.process():
-                body = message.body.decode()
-                data = json.loads(body)
-                token = data['token']
-                baz = data['payload']['baz']
-                message = f"successfully foo'd the baz ({baz})"  # or some other process with the data
-                response = {
-                    'token': token,
-                    'payload': {
-                        'message': message
+                try:
+                    body = message.body.decode()
+                    data = json.loads(body)
+                    token = data['token']
+                    baz = data['payload']['baz']
+                    message = f"successfully foo'd the baz ({baz})"
+                    response = {
+                        'token': token,
+                        'payload': {
+                            'message': message
+                        }
                     }
-                }
 
-                # Simulate long running task
-                await asyncio.sleep(random.randint(2, 5))
+                    # Simulate long running task
+                    await asyncio.sleep(random.randint(2, 5))
 
-                # Publish the response
-                await channel.default_exchange.publish(
-                    aio_pika.Message(body=json.dumps(response).encode()),
-                    routing_key=os.getenv('AMQP_OUTPUT_CHANNEL_ASYNC')
-                )
+                    # Publish the response
+                    await channel.default_exchange.publish(
+                        aio_pika.Message(body=json.dumps(response).encode()),
+                        routing_key=os.getenv('AMQP_OUTPUT_CHANNEL_ASYNC')
+                    )
+                except Exception as e:
+                    print(f"Error processing message: {e}")
+                    # Send error response
+                    error_response = {
+                        'token': token,
+                        'status': 'error',
+                        'payload': {
+                            'message': str(e)
+                        }
+                    }
+                    await channel.default_exchange.publish(
+                        aio_pika.Message(body=json.dumps(error_response).encode()),
+                        routing_key=os.getenv('AMQP_OUTPUT_CHANNEL_ASYNC')
+                    )
 
         # Wait for incoming messages and output response
         input_queue = await channel.declare_queue(os.getenv('AMQP_INPUT_CHANNEL_ASYNC'))
         await channel.declare_queue(os.getenv('AMQP_OUTPUT_CHANNEL_ASYNC'))
-        await input_queue.consume(process_message_async)
-        await asyncio.Future() 
+        
+        async with input_queue.iterator() as queue_iter:
+            async for message in queue_iter:
+                asyncio.create_task(process_message_async(message))
 
 ###############################################################################
 def process_message(ch, method, properties, body):
