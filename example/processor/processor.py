@@ -6,7 +6,6 @@ import os
 import pika
 import random
 from dotenv import load_dotenv
-from collections import defaultdict
 
 load_dotenv()
 

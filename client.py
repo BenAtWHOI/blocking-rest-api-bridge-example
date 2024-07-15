@@ -39,34 +39,19 @@ def test_blocking_endpoint():
     #  - endpoint is blocking, taks execute synchronously
 
 ###############################################################################
-def test_multiple_non_blocking_endpoint():
+def test_non_blocking_endpoint():
     print('======================================')
-    print('Testing multiple simultaneous non-blocking endpoint calls\n')
-
-    # Test endpoint 10 times
-    threads = []
-    url = f'{os.getenv("BASE_URL")}/api/non_blocking'
-    for i in range(3):
-        # Asynchronously start each call
-        data = {'foo': 'bar', 'baz': i}
-        thread = Thread(target=call_random, args=(i, url, data,))
-        threads.append(thread)
-        thread.start()
-
-    for thread in threads:
-        thread.join()
-
-def call_random(i, url, data):
-    # Call the endpoint after a random amount of time and check status
-    time.sleep(random.randint(0, 5))
+    print('Testing non-blocking endpoint\n')
+    
+    # Make non blocking endpoint call
     start = time.perf_counter()
-
-    # Initial endpoint call
+    url = f'{os.getenv("BASE_URL")}/api/non_blocking'
+    data = {'foo': 'foooooo', 'baz': 7777777}
     response = requests.post(url, json=data)
     token = response.json()['token']
-    print(f'Thread {i} started: {response.json()}')
+    print(f'Initial response: {pretty(response)}')
 
-    # Interrogate status of call until completed 
+    # Interrogate status of call until completed
     url = f'{os.getenv("BASE_URL")}/api/status?token={token}'
     response = requests.get(url)
     status = response.json()['status']
@@ -74,16 +59,22 @@ def call_random(i, url, data):
         time.sleep(1)
         response = requests.get(url)
         status = response.json()['status']
+        print(f'Polling status: {pretty(response)}')
+    
 
     finish = time.perf_counter() - start
-    print(f'Thread {i} complete ({finish:0.2f}s): {response.json()}')
+    print(f'\nTask completed in {finish:0.2f} second(s).')
+
+    # Observe output: 
+    #  - task immediately returns a 'status: processing' message with the token
+    #  - subsequent interrogations of the task reveal the status
+    #  - when the task is completed, the interrogation returns the completed status along with the payload  
 
 ###############################################################################
 async def test_multiple_non_blocking_endpoint():
     print('======================================')
     print('Testing multiple simultaneous non-blocking endpoint calls\n')
 
-    # Test endpoint 3 times
     url = f'{os.getenv("BASE_URL")}/api/non_blocking'
     tasks = []
     for i in range(3):
@@ -91,8 +82,13 @@ async def test_multiple_non_blocking_endpoint():
         task = asyncio.create_task(call_random(i, url, data))
         tasks.append(task)
 
-    # Wait for all tasks to complete
-    await asyncio.gather(*tasks)
+    # Wait for all tasks to complete or timeout
+    try:
+        await asyncio.wait_for(asyncio.gather(*tasks), timeout=30)  # 2-minute overall timeout
+    except asyncio.TimeoutError:
+        print("Test timed out after 2 minutes")
+
+    print('======================================')
 
 async def call_random(i, url, data):
     # Call the endpoint after a random amount of time and check status
