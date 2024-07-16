@@ -8,6 +8,8 @@ COPY requirements.txt .
 
 # Install the dependencies
 
+RUN apt-get update && apt-get install -y git
+
 RUN pip install -r requirements.txt
 
 # Copy the content of the local src directory to the working directory

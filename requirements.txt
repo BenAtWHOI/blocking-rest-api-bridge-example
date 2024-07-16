@@ -5,3 +5,4 @@ django-ninja
 pika
 python-dotenv
 starlette
+git+https://github.com/WHOIGit/amplify-amqp-utils.git
