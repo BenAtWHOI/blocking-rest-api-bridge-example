@@ -4,9 +4,10 @@ import json
 import os
 import pika
 import uuid
-from .models import RequestPayload, ResponseHolder
+from .models import AsyncEventList, RequestPayload, ResponseHolder
 from dotenv import load_dotenv
 from ninja import NinjaAPI
+from starlette.background import BackgroundTasks
 from threading import Thread
 
 ###############################################################################
@@ -52,13 +53,14 @@ def blocking(request, payload: RequestPayload):
         return {"error": "Response timeout"}
                 
 ###############################################################################
-cached_requests = {}
+cached_requests = AsyncEventList()
 
 @api.post("/non_blocking")
 async def non_blocking(request, payload: RequestPayload):
+    # Create request body
     token = str(uuid.uuid4())
     body = {"token": token, "payload": payload.dict()}
-    cached_requests[token] = {"status": "processing"}
+    await cached_requests.set(token, {"status": "processing"})
 
     # Publish message to AMQP queue
     connection_url = f"amqp://{os.getenv('AMQP_USERNAME')}:{os.getenv('AMQP_PASSWORD')}@{os.getenv('AMQP_HOST')}"
@@ -70,40 +72,45 @@ async def non_blocking(request, payload: RequestPayload):
         await channel.declare_queue(os.getenv('AMQP_INPUT_CHANNEL_ASYNC'))
         await channel.default_exchange.publish(
             aio_pika.Message(body=json.dumps(body).encode()),
-            routing_key=os.getenv('AMQP_INPUT_CHANNEL_ASYNC'))
+            routing_key=os.getenv('AMQP_INPUT_CHANNEL_ASYNC')
+        )
 
-    # Start another thread to monitor task completion
-    thread = Thread(target=watch_task, args=(token,))
-    thread.start()
-
+    # Immediately return a processing status
     return {"token": token, "status": "processing"}
 
-def watch_task(token):
-    credentials = pika.PlainCredentials(os.getenv('AMQP_USERNAME'), os.getenv('AMQP_PASSWORD'))
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=os.getenv('AMQP_HOST'), credentials=credentials))
-    channel = connection.channel()
+async def watch_task():
+    try:
+        connection_url = f"amqp://{os.getenv('AMQP_USERNAME')}:{os.getenv('AMQP_PASSWORD')}@{os.getenv('AMQP_HOST')}"
+        connection = await aio_pika.connect_robust(connection_url)
+        
+        async with connection:
+            channel = await connection.channel()
+            output_queue = await channel.declare_queue(os.getenv('AMQP_OUTPUT_CHANNEL_ASYNC'))
 
-    channel.queue_declare(queue=os.getenv('AMQP_OUTPUT_CHANNEL_ASYNC'))
+            async def process_response_async(message: aio_pika.IncomingMessage):
+                async with message.process():
+                    response = json.loads(message.body)
+                    token = response['token']
+                    cached_request = await cached_requests.get(token)
+                    if cached_request:
+                        await cached_requests.set(token, {"status": "complete", "payload": response['payload']})
 
-    def callback(ch, method, properties, body):
-        response = json.loads(body)
-        if response['token'] == token:
-            cached_requests[token] = {"status": "complete", "payload": response['payload']}
-            channel.stop_consuming()
-
-    channel.basic_consume(queue=os.getenv('AMQP_OUTPUT_CHANNEL_ASYNC'), on_message_callback=callback, auto_ack=True)
-    channel.start_consuming()
+            async with output_queue.iterator() as queue_iter:
+                async for message in queue_iter:
+                    await process_response_async(message)
+    except Exception as e:
+        print(f"Error in watch_task: {e}")
 
 @api.get("/status")
-def status(request):
+async def status(request):
     token = request.GET['token']
-    cached_request = cached_requests.get(token, {"status": "not_found"})
+    cached_request = await cached_requests.get(token)
     response = {
         'token': token,
         'status': cached_request['status']
     }
     if response['status'] == 'complete':
         response['payload'] = cached_request['payload']
-        del cached_requests[token]
+        await cached_requests.remove(token)
 
     return response

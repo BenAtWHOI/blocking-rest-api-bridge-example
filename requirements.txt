@@ -4,3 +4,4 @@ django
 django-ninja
 pika
 python-dotenv
+starlette
