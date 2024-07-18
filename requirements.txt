@@ -1,4 +1,4 @@
 django
 django-ninja
-pika
 python-dotenv
+git+https://github.com/WHOIGit/amplify-amqp-utils.git
