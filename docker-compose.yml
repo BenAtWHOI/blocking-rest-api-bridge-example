@@ -35,3 +35,7 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+    # Show stdout in docker logs
+    tty: true
+    environment:
+      - PYTHONUNBUFFERED=1

@@ -1,3 +1,4 @@
+aiopg
 django
 django-ninja
 python-dotenv

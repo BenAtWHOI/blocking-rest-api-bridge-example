@@ -2,9 +2,9 @@
 
 echo "Starting 5 workers..."
 
-for i in {1..5}
+for i in $(seq 1 5)
 do
-    python processor/processor.py &
+    python processor/processor.py $i &
 done
 
 wait
