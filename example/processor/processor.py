@@ -45,6 +45,13 @@ def run_processor():
         routing_key=os.getenv('AMQP_INPUT_CHANNEL')
     )
 
+    # Keep processor running
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("Processor shutting down...")
+
 ###############################################################################
 if __name__ == '__main__':
     run_processor()

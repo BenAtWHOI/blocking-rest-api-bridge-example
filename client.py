@@ -16,7 +16,7 @@ def pretty(response):
 def test_endpoint(url, payload):
     start = time.time()
     time.sleep(random.uniform(0, 2))
-    print(f'Thread {payload['baz']} started')
+    print(f'Thread {payload['baz']} started: {payload}')
     headers = {'Content-Type': 'application/json'}
     res = requests.post(url, json=payload, headers=headers)
     finish = time.time() - start
@@ -36,7 +36,9 @@ if __name__ == '__main__':
         thread = Thread(target=test_endpoint, args=(url, payload))
         threads.append(thread)
         thread.start()
-    [thread.join() for thread in threads]
+
+    for thread in threads:
+        thread.join()
 
     finish = time.time() - start
     print('======================================')
