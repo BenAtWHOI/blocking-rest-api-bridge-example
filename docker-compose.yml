@@ -29,7 +29,7 @@ services:
     build:
       context: .
     container_name: processor
-    command: ["sh", "start_processors.sh"]
+    command: ["python", "processor/processor.py"]
     volumes:
       - .:/app
     depends_on:

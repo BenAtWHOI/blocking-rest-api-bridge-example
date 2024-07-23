@@ -1,4 +1,3 @@
-import json
 import os
 import random
 import requests
@@ -11,10 +10,13 @@ load_dotenv()
 ###############################################################################
 def test_endpoint(url, payload):
     start = time.time()
+
     # Delay endpoint for up to 2 seconds for concurrency testing
     time.sleep(random.uniform(0, 2))
     print(f'Thread {payload['baz']} started: {payload}')
     res = requests.post(url, json=payload)
+
+    # Receive token and processed data from the endpoint and record task TTL
     finish = time.time() - start
     print(f'Thread {payload['baz']} complete ({finish:0.2f}s): {res.json()}')
 
@@ -33,6 +35,7 @@ if __name__ == '__main__':
         threads.append(thread)
         thread.start()
 
+    # Wait for all endpoints to return before finishing
     for thread in threads:
         thread.join()
 

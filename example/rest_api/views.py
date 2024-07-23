@@ -18,12 +18,14 @@ POLL_INTERVAL = int(os.getenv('POLL_INTERVAL'))
 
 ###############################################################################
 async def async_insert_task(token, status, payload):
+    # Initial insert for task with status of processing
     async with aiosqlite.connect('tasks.db') as db:
         await db.execute("INSERT INTO processes (token, status, payload) VALUES (?, ?, ?)", 
                          (token, status, json.dumps(payload)))
         await db.commit()
 
 async def async_check_task_status(token):
+    # Poll database for status
     async with aiosqlite.connect('tasks.db') as db:
         async with db.execute("SELECT status, payload FROM processes WHERE token = ?", (token,)) as cursor:
             result = await cursor.fetchone()
@@ -35,7 +37,7 @@ async def process(request, payload: RequestPayload):
     token = str(uuid.uuid4())
     body = json.dumps({"token": token, "payload": payload.dict()})
 
-    # Insert task into database
+    # Insert task in database
     await async_insert_task(token, "processing", payload.dict())
 
     # Publish task to queue
@@ -47,7 +49,7 @@ async def process(request, payload: RequestPayload):
         os.getenv('AMQP_EXCHANGE')
     )
 
-    # Poll db for status
+    # Poll db for status until complete
     start_time = asyncio.get_event_loop().time()
     while (asyncio.get_event_loop().time() - start_time < TIMEOUT):
         status, result = await async_check_task_status(token)

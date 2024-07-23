@@ -1,14 +1,11 @@
 import asyncio
 import aiosqlite
 import json
-import time
 import os
 import random
-import sqlite3
-import sys
 from amqp.rabbit import aio_subscribe
 from dotenv import load_dotenv
-from message_process import process_message #Import the process to be done on the data here
+from message_process import process_message #This represents the generic process that the processor performs on the data
 
 load_dotenv()
 
@@ -47,16 +44,6 @@ async def run_processor():
         routing_key=os.getenv('AMQP_INPUT_CHANNEL')
     )
 
-    # Keep processor running
-    try:
-        while True:
-            await asyncio.sleep(1)
-    except KeyboardInterrupt:
-        print("Processor shutting down...")
-
 ###############################################################################
 if __name__ == '__main__':
-    global p_id 
-    p_id = sys.argv[1]
-    print(f'Processor {p_id} started')
     asyncio.run(run_processor())
