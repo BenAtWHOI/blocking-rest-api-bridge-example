@@ -12,7 +12,7 @@ load_dotenv()
 ###############################################################################
 async def callback(message):
     # Simulate long running task
-    asyncio.sleep(random.randint(2, 5))
+    await asyncio.sleep(random.uniform(0, 4))
 
     # Process the data
     message = json.loads(message)

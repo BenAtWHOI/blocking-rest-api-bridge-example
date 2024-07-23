@@ -1,4 +1,3 @@
-
 import asyncio
 import aiosqlite
 import json
@@ -17,19 +16,26 @@ TIMEOUT = int(os.getenv('TIMEOUT'))
 POLL_INTERVAL = int(os.getenv('POLL_INTERVAL'))
 
 ###############################################################################
-async def async_insert_task(token, status, payload):
+async def insert_task(token, status, payload):
     # Initial insert for task with status of processing
     async with aiosqlite.connect('tasks.db') as db:
         await db.execute("INSERT INTO processes (token, status, payload) VALUES (?, ?, ?)", 
                          (token, status, json.dumps(payload)))
         await db.commit()
 
-async def async_check_task_status(token):
+async def check_task_status(token):
     # Poll database for status
     async with aiosqlite.connect('tasks.db') as db:
-        async with db.execute("SELECT status, payload FROM processes WHERE token = ?", (token,)) as cursor:
-            result = await cursor.fetchone()
-            return result if result else (None, None)
+        async with db.execute("SELECT status FROM processes WHERE token = ?", (token,)) as cursor:
+            res = await cursor.fetchone()
+            return res[0] if res else None
+
+async def check_task_result(token):
+    # Poll database for the updated message when task is completed
+    async with aiosqlite.connect('tasks.db') as db:
+        async with db.execute("SELECT payload FROM processes WHERE token = ?", (token,)) as cursor:
+            res = await cursor.fetchone()
+            return res[0] if res else None
 
 ###############################################################################
 @api.post("/process")
@@ -38,7 +44,7 @@ async def process(request, payload: RequestPayload):
     body = json.dumps({"token": token, "payload": payload.dict()})
 
     # Insert task in database
-    await async_insert_task(token, "processing", payload.dict())
+    await insert_task(token, "processing", payload.dict())
 
     # Publish task to queue
     await aio_publish(
@@ -52,15 +58,15 @@ async def process(request, payload: RequestPayload):
     # Poll db for status until complete
     start_time = asyncio.get_event_loop().time()
     while (asyncio.get_event_loop().time() - start_time < TIMEOUT):
-        status, result = await async_check_task_status(token)
+        status = await check_task_status(token)
         if status == "complete":
+            res = await check_task_result(token)
             return {
                 "token": token,
                 "status": status,
-                "message": json.loads(result)["payload"]["message"]
+                "payload": json.loads(res)["payload"]
             }
         await asyncio.sleep(POLL_INTERVAL)
 
     # Request has timed out
     return {"status": "timeout"}
-
