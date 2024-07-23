@@ -9,11 +9,9 @@ $ python client.py
 
 # Explanation
 
-### Blocking endpoint:
- - Payload and token are returned to the client when the task completes
- - Endpoint blocks upon request, tasks are executed synchronously
-
-### Non-blocking endpoint:
- - Task immediately returns a 'status: processing' message and the token
- - Subsequent interrogations of the task reveal the status and the token
- - When the task is completed, the interrogation returns the completed status, token, and payload  
+1. Client calls the endpoint simultaneously in different threads
+2. API creates a token and adds the task to the database with a "processing" status
+3. API publishes a message with the token and payload to a rabbitmq exchange
+4. The processor receves the message published by the API
+5. The processor sleeps for a few seconds to simulate a long running task and performs some operation on the payload, and publishes the token, the transformed data, and a "complete" status to the database
+6. While the processor is working, the API polls the database for status until it receives "complete", and returns the payload and token to the client
