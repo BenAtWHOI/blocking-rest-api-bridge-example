@@ -29,13 +29,12 @@ services:
     build:
       context: .
     container_name: processor
-    command: ["sh", "./start_processors.sh"]
+    command: ["sh", "start_processors.sh"]
     volumes:
       - .:/app
     depends_on:
       rabbitmq:
         condition: service_healthy
-    # Show stdout in docker logs
     tty: true
     environment:
-      - PYTHONUNBUFFERED=1
+      - PYTHONUNBUFFERED=1 

@@ -1,4 +1,4 @@
-aiopg
+aiosqlite
 django
 django-ninja
 python-dotenv

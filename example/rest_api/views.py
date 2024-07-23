@@ -1,6 +1,6 @@
 
 import asyncio
-import aiopg
+import aiosqlite
 import json
 import os
 import uuid
@@ -15,31 +15,19 @@ load_dotenv()
 
 TIMEOUT = int(os.getenv('TIMEOUT'))
 POLL_INTERVAL = int(os.getenv('POLL_INTERVAL'))
-DSN = f"dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} host={os.getenv('DB_HOST')}"
 
 ###############################################################################
-async def get_db_pool():
-    return await aiopg.create_pool(DSN)
-
 async def async_insert_task(token, status, payload):
-    async with (await get_db_pool()).acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "INSERT INTO processes (token, status, payload) VALUES (%s, %s, %s)",
-                (token, status, json.dumps(payload))
-            )
+    async with aiosqlite.connect('tasks.db') as db:
+        await db.execute("INSERT INTO processes (token, status, payload) VALUES (?, ?, ?)", 
+                         (token, status, json.dumps(payload)))
+        await db.commit()
 
 async def async_check_task_status(token):
-    async with (await get_db_pool()).acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "SELECT status, payload FROM processes WHERE token = %s",
-                (token,)
-            )
-            result = await cur.fetchone()
-            if result:
-                return result[0], json.loads(result[1])
-            return None, None
+    async with aiosqlite.connect('tasks.db') as db:
+        async with db.execute("SELECT status, payload FROM processes WHERE token = ?", (token,)) as cursor:
+            result = await cursor.fetchone()
+            return result if result else (None, None)
 
 ###############################################################################
 @api.post("/process")

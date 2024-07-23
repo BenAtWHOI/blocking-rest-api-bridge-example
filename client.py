@@ -6,21 +6,17 @@ import time
 from dotenv import load_dotenv
 from threading import Thread
 
-###############################################################################
 load_dotenv()
-
-def pretty(response):
-    return json.dumps(response.json(), indent=2)
 
 ###############################################################################
 def test_endpoint(url, payload):
     start = time.time()
+    # Delay endpoint for up to 2 seconds for concurrency testing
     time.sleep(random.uniform(0, 2))
     print(f'Thread {payload['baz']} started: {payload}')
-    headers = {'Content-Type': 'application/json'}
-    res = requests.post(url, json=payload, headers=headers)
+    res = requests.post(url, json=payload)
     finish = time.time() - start
-    print(f'Thread {payload['baz']} complete ({finish:0.2f}s): {pretty(res)}')
+    print(f'Thread {payload['baz']} complete ({finish:0.2f}s): {res.json()}')
 
 ###############################################################################
 if __name__ == '__main__':
@@ -31,7 +27,7 @@ if __name__ == '__main__':
     # Test endpoint 10 times with random delays
     threads = []
     url = f'{os.getenv('BASE_API_URL')}/process'
-    for i in range(10):
+    for i in range(20):
         payload = {'foo': 'bar', 'baz': i}
         thread = Thread(target=test_endpoint, args=(url, payload))
         threads.append(thread)
