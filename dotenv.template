@@ -1,14 +1,9 @@
-BASE_API_URL=http://localhost:8000/api
-
 AMQP_USERNAME=guest
 AMQP_PASSWORD=guest
 AMQP_HOST=rabbitmq
 AMQP_EXCHANGE=bridge
 
-AMQP_INPUT_CHANNEL=api_input
-AMQP_OUTPUT_CHANNEL=api_output
-AMQP_INPUT_CHANNEL_ASYNC=api_input_async
-AMQP_OUTPUT_CHANNEL_ASYNC=api_output_async
+BASE_API_URL=http://localhost:8000/api
 
 POLL_INTERVAL=1
 TIMEOUT=30
